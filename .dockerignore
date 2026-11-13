@@ -1,0 +1,11 @@
+.env
+.env.*
+data/
+*.session
+.venv/
+.pytest_cache/
+__pycache__/
+samples/
+.git/
+ops-private/
+docs/

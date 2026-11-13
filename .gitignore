@@ -1,0 +1,15 @@
+.env
+.env.*
+!.env.example
+data/
+*.session
+*.session-journal
+__pycache__/
+.pytest_cache/
+.venv/
+samples/*.png
+samples/*.jpg
+samples/*.jpeg
+
+# private ops notes (server IPs, keys, request IDs)
+ops-private/

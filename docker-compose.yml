@@ -1,0 +1,21 @@
+name: visa-slot-watcher
+
+services:
+  watcher:
+    hostname: visa-slot-watcher
+    build: .
+    restart: unless-stopped   # restarts after crashes, watchdog exits and VPS reboots
+    init: true                # proper signal handling / zombie reaping
+    stop_grace_period: 40s
+    env_file: .env
+    environment:
+      DATA_DIR: /data
+    volumes:
+      - ./data:/data
+    mem_limit: 800m          # combined watcher + persistent Chromium, including charged file cache
+    shm_size: 256m           # shared memory for Chromium
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
