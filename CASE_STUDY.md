@@ -1,196 +1,191 @@
 # Case Study: Visa Appointment Monitoring & Real-Time Alert Engine
 
-> *A comprehensive engineering case study detailing the architecture, resilience mechanisms, and operational impact of an autonomous 24/7 event-driven slot monitoring and multi-channel alert engine.*
+> *How a read-only watcher helped a family member book an H-1B visa appointment: the problem, the design, and what
+> was hard.*
 
 ---
 
-## Project Hero
+## Project Summary
 
 - **Project Title**: Visa Appointment Monitoring & Real-Time Alert Engine
-- **Subtitle**: An autonomous 24/7 slot monitoring and multi-channel notification engine that tracks community Telegram feeds and portal availability via multi-modal AI verification and zero-latency notification queues.
-- **Role**: Lead Systems Architect & Automation Engineer
+- **Subtitle**: A 24/7 read-only watcher that reads public Telegram groups and the CheckVisaSlots status page,
+  checks posts with rules and an OpenAI vision model, and sends Telegram alerts when slots open.
+- **Role**: Sole developer
 - **Author**: Sambhav Jain
-- **Timeline**: 3-Week Sprint & Production Hardening
+- **Timeline**: About two weeks, then running 24/7
 - **Stack & Technologies**:
-  - **Language & Runtime**: Python 3.12, Asyncio, Docker Compose
-  - **Protocol & Ingestion**: Telethon (Telegram MTProto Client), Playwright Chromium (Headless DOM Mutation Engine)
-  - **Verification & Intelligence**: OpenAI GPT-4o Vision, Pydantic Structured JSON Schemas
-  - **State & Storage**: SQLite3 (WAL Mode, Persistent Message Cursors & Slot Hashes)
-  - **Alerting & Dispatch**: Telegram Bot API (Async HTTPX, Rate-Paced Queues), CallMeBot Gateway
-  - **Quality & Testing**: Pytest, Asyncio Test Suite, Static Code Safety Checks (160 Passing Tests)
-- **Project Type**: Production Operations Automation & Event-Driven Intelligence Pipeline
+  - **Language & Runtime**: Python 3.12, asyncio, Docker Compose
+  - **Ingestion**: Telethon (Telegram MTProto user client, read-only), Playwright Chromium (persistent profile)
+  - **Verification**: OpenAI vision model with a strict JSON schema response
+  - **State**: SQLite in WAL mode (group cursors, page snapshot, alerted keys)
+  - **Alerting**: Telegram Bot API over HTTPX with per-recipient queues; optional CallMeBot WhatsApp
+  - **Quality**: pytest (160 tests, including read-only safety checks), GitHub Actions CI
+- **Project Type**: Personal project for a family member
 
 ---
 
-## Executive Summary & Engineering Impact
+## Outcome
 
-Securing an employment visa stamping appointment (such as US H-1B OFC biometrics and consular interview slots) is an intensely stressful operational bottleneck for thousands of professionals worldwide. Available appointment slots are released in unpredictable, unannounced batches that vanish within 60 to 120 seconds. 
+**The watcher's alerts led to a booked H-1B appointment for the family member it was built for.** It runs 24/7 on a
+VPS, and nobody has to watch the groups or the website by hand.
 
-Direct automated scraping against official consular websites triggers aggressive Cloudflare bot gates, Captchas, and 72-hour account suspensions. Conversely, relying on manual monitoring of community crowdsourced channels causes severe alert fatigue: public groups receive upwards of 5,000 messages daily, where 98%+ of traffic is unhelpful chatter ("Is Delhi open?", "NA 1 H1B All", stickers, and spam).
-
-This project solved the appointment discovery problem by architecting a **strictly passive, high-throughput intelligence engine**:
-
-```
-+-----------------------------+   +-----------------------------+   +-----------------------------+
-|    98.4% Noise Reduction    |   |     < 3-Second Delivery     |   |    100% Account Safety      |
-| Deterministic regex filter  |   | Asynchronous queue dispatch |   | Passive read-only design    |
-| & GPT-4o vision verification|   | pushes alerts before expiry |   | completely avoids portal ban|
-+-----------------------------+   +-----------------------------+   +-----------------------------+
-```
-
-* **98.4% Chatter & Noise Reduction**: Engineered a two-stage classification pipeline combining a sub-millisecond heuristic pre-filter (`na_filter.py`) with a multimodal GPT-4o vision analyzer (`ai_check.py`), filtering out thousands of irrelevant messages without consuming unnecessary API tokens.
-* **Sub-3-Second Notification Dispatch**: Constructed an asynchronous multi-target alert engine with independent per-recipient pacing, delivering verified drop notifications to mobile devices in under 3 seconds.
-* **100% Account Safety Guarantee**: Decoupled intelligence gathering entirely from consular portals. By consuming crowdsourced Telegram signals and public status boards, the system provides zero risk of applicant account suspensions or IP blacklisting.
-* **Production Success**: Successfully detected an unannounced batch opening, delivered a push notification to family recipients within seconds of availability, and enabled immediate manual login that secured a confirmed visa appointment.
+What the design guarantees, by construction and by tests:
+* **Never touches the visa portal and never books**, so the applicant's account is never put at risk by the tool.
+* **Never posts, joins or reacts on Telegram** with the reading account.
+* **Fails open:** a model outage can't silently hide a real opening.
 
 ---
 
-## The Problem & Business Context
+## The Problem
 
-### 1. The Visa Appointment Scarcity Bottleneck
-Consular post-pandemic backlogs created an extreme supply-demand mismatch for US visa appointments in India (New Delhi, Mumbai, Chennai, Hyderabad, and Kolkata). Available slots open sporadically at unpredictable hours (often between 1:00 AM and 5:00 AM), with high-demand batches filling in under two minutes.
+### 1. Slots are scarce and unpredictable
+US visa appointments in India (New Delhi, Mumbai, Chennai, Hyderabad and Kolkata) open rarely, at no fixed time,
+and are taken quickly. Missing a short opening can mean waiting a long time for the next one.
 
-### 2. The Danger of Direct Booking Bots
-Desperate applicants often turn to third-party "booking bots" that automate portal logins. However, official consular portals (usvisascheduling.com and ustraveldocs) employ sophisticated bot detection:
-* Multiple automated login queries rapidly trigger rate limits and IP bans.
-* Suspicious browser automation signatures lead to **immediate 72-hour account lockouts** or permanent profile cancellation.
-* Handing account credentials to unauthorized third-party booking agents introduces severe identity and cybersecurity risks.
+### 2. Booking bots are risky
+Some applicants use tools that automate the official portal. Automating the portal can get the applicant's account
+suspended, and handing credentials to third-party booking services is a security risk. This project deliberately
+only alerts; a person books by hand.
 
-### 3. The Signal-to-Noise Paradox in Crowdsourced Feeds
-While applicants actively report newly discovered slots across public Telegram channels, tracking these communities manually is impossible:
-* **Message Volume**: A single active group generates 3,000 to 7,000 messages per day.
-* **Dominance of False Positives**: Over 98% of messages consist of:
-  * Negative reports ("Chennai OFC NA", "No slots for Dec").
-  * Speculative questions ("Any slots for Dropbox?").
-  * Emotional banter, stickers, and forwarded promotional spam.
-* **Multimodal Evidence**: Users often post screenshots of the booking calendar without typing any text. Pure text parsers fail completely on image-only posts.
+### 3. Community groups are noisy
+Applicants report openings in public Telegram groups, but most messages are questions, "NA" (not available) reports,
+stickers and chat. Many real sightings are screenshots of the booking calendar with no text, which a text-only
+filter would miss.
 
 ---
 
-## The System Solution
+## The Solution
 
-The engine was architected around a core design philosophy: **Zero Portal Footprint, Complete Intelligence Fidelity**. 
-
-Instead of touching protected government servers, the system passively aggregates real-time signals from community crowdsourcing networks and public status monitors. It ingests messages via Telegram MTProto client protocols, cleans out chatter through regex heuristics, verifies screenshots via vision models, deduplicates cross-channel broadcasts, and alerts users via their private Telegram bots.
+The watcher reads the community sources the applicant was already relying on, and does the watching for them:
 
 ```
-[ Public Community Telegram Channels ] ──► (MTProto Poller: Telethon) ──┐
-                                                                        ▼
-[ CheckVisaSlots Status Board ] ──► (Chromium Driver: Playwright) ──► [ Stage 1: Heuristic NA Filter ]
-                                                                        │ (Drops 85%+ noise)
-                                                                        ▼
-                                                              [ Stage 2: GPT-4o Multimodal Vision ]
-                                                                        │ (Validates text & images)
-                                                                        ▼
-                                                              [ Stage 3: Spatial-Temporal Fingerprint ]
-                                                                        │ (Deduplicates across channels)
-                                                                        ▼
-                                                              [ Stage 4: Multi-Target Alert Dispatch ]
-                                                                        ├──► Telegram Alert Bot (Paced)
-                                                                        └──► WhatsApp Gateway (Optional)
+[ Public Telegram groups ] ──► Telethon poller (~25 s) ──► Rule filter ──► OpenAI vision check ──┐
+                                                                                                  ▼
+[ CheckVisaSlots page (off by default) ] ──► Playwright reader (~2 min) ──► changed row ──► Deduplication
+                                                                                                  │
+                                                                                                  ▼
+                                                                           Per-recipient alert queues
+                                                                           ├──► Telegram alert bot
+                                                                           └──► WhatsApp (optional)
 ```
 
 ---
 
-## Step-by-Step System Walkthrough
+## Step-by-Step Walkthrough
 
-### Phase 1: Real-Time Stream Ingestion
-* **Telethon MTProto Integration**: Operates an asynchronous Telegram client using Telegram's binary MTProto protocol. It listens across configured public channel IDs, maintaining a persistent SQLite cursor per group (`last_seen_msg_id`). On reboot, it resumes precisely from its last offset, ensuring zero dropped messages.
-* **Playwright Chromium Poller**: An optional background poller monitors the public CheckVisaSlots status table every ~2 minutes using a persistent Chromium browser profile, detecting DOM timestamp mutations without triggering anti-bot gates.
+### Phase 1: Ingestion
+* **Telegram:** an asynchronous Telethon user client polls each configured public group about every 25 seconds,
+  staggered across groups. It keeps one cursor per group in SQLite (`tg_cursor.last_id`), so after a restart it
+  resumes where it left off. Posts older than 30 minutes, such as a backlog after downtime, are never alerted.
+* **CheckVisaSlots (optional):** a Playwright Chromium reader with a persistent profile reads the public H-1B table
+  about every 2 minutes (never two checks less than 115 seconds apart) and alerts when a row's "Last Seen At"
+  changes. These changes skip the AI check (disabled by default).
 
-### Phase 2: Heuristic Pre-Filtering & Multimodal AI Verification
-When a message arrives, it passes through a rigorous two-stage gating funnel:
-1. **Deterministic Heuristic Pre-Filter (`na_filter.py`)**:
-   * Evaluates text against a battery of regex patterns to instantly identify negative reports ("NA", "Nil", "no slots"), bot commands, stickers, and empty payloads.
-   * If a message is classified as noise, it is logged to `decisions.log` and immediately discarded, saving 85%+ in downstream AI token costs.
-2. **Multimodal Vision Verification (`ai_check.py`)**:
-   * If a post contains an image (calendar screenshot) or candidate text, the engine fetches the image directly into an in-memory byte buffer (never written to disk).
-   * It prompts OpenAI GPT-4o with strict JSON schema constraints (`response_format={"type": "json_object"}`), requiring the model to extract `available` (boolean), `appointment_type` (biometrics/interview), `location` (city), and `dates`.
-   * **Fail-Open Safety Boundary**: If OpenAI encounters API downtime, rate limits, or invalid JSON, the system defaults to `failed=True` and forwards the alert flagged as `(AI check failed - please look)`. A real opening is never suppressed due to an external API glitch.
+### Phase 2: Rule filter, then the vision model
+1. **Rule filter (`na_filter.py`):** drops pure "NA" reports, stickers, service messages and empty messages. Each
+   decision is written to `decisions.log`. Only posts that might be sightings reach the model.
+2. **Vision check (`ai_check.py`):** images are downloaded into memory (`download_media(file=bytes)`), never to
+   disk, and sent with the text to a small OpenAI vision model using a **strict JSON schema**. The model returns
+   whether slots are available, the appointment type, the city, the dates and a short summary.
+3. **Fail open:** if the model times out, errors or returns bad output, a post that still looks like a sighting is
+   alerted anyway with the header "CHECK THIS POST · automatic check failed". A fallback model is used
+   automatically if the main one is unavailable.
 
-### Phase 3: Spatial-Temporal Fingerprinting & State Deduplication
-When slots drop, dozens of applicants broadcast identical alerts across multiple channels within seconds. To prevent alert fatigue, `slotkey.py` computes a spatial-temporal fingerprint:
+### Phase 3: Deduplication
+The same opening is often posted many times. Before an alert is queued, the watcher skips:
+* a message that was already alerted (keys in SQLite),
+* other images from the same album,
+* the same person posting the same text or screenshot in several groups within 5 minutes,
+* the same slot reported again within 2 minutes, matched by a fingerprint from `slotkey.py`:
 ```python
-slotkey = (appointment_type, normalized_city, earliest_date, hour_bucket)
+slot_key = f"{appointment_type}|{city}|{first_date}"   # e.g. "biometrics|chennai|2026-11-24"
 ```
-The engine logs this key to SQLite (`watcher.db`). If an incoming alert matches an active slotkey seen within the last 15 minutes, it is recognized as a duplicate broadcast and suppressed from dispatch.
+City aliases (for example "CHN", "Madras" and "Chennai") are normalised. If the city or date can't be pinned down,
+there is no fingerprint and the alert is always sent: a duplicate is better than a miss.
 
-### Phase 4: Prioritized Dispatch, Queue Pacing & Supervisor Watchdog
-* **Independent Per-Recipient Queues**: Alerts are queued in memory per recipient (`alerts.py`). If recipient A experiences network delays or blocks the bot, recipient B receives their alert without a millisecond of latency.
-* **Rate-Limit Enforcement**: Dispatches are paced at 1.5 seconds per chat to comply with Telegram Bot API guidelines, honoring any HTTP 429 `retry_after` response headers automatically.
-* **Protocol Fallback**: Formats alerts with clean HTML highlighting consulate cities, appointment categories, and time stamps. If Telegram returns an unescaped entity parsing error, the dispatcher catches the exception and immediately retries the alert in raw plain text.
-* **Thread-Safe Process Watchdog**: A dedicated background thread (`health.py`) monitors heartbeat timestamps from the main event loop. If event loop processing hangs for more than 10 minutes, the watchdog initiates an immediate container exit, triggering Docker restart policies.
+### Phase 4: Delivery and 24/7 reliability
+* **Per-recipient queues** (`alerts.py`): one failing chat never delays the others. Sends are spaced 1.5 seconds
+  apart per chat, Telegram's `retry_after` is respected, transient errors are retried with backoff (5 s up to
+  10 min), and if Telegram rejects the HTML the alert is resent as plain text.
+* **Supervised loops:** each loop restarts with backoff after a crash; Docker restarts the process if it dies.
+* **Watchdog:** a separate thread in `app.py` exits the process if the Telegram loop or the event loop stops for more
+  than 10 minutes, and Docker restarts it.
+* **Health warnings** (`health.py`): one warning when Telegram, the AI check or CheckVisaSlots has been failing,
+  and one when it recovers. A daily check-in confirms the watcher is alive. These go only to the owner, never to
+  the family alert chats.
 
 ---
 
-## Annotated Visual & Execution Tour
+## What an Alert Looks Like
 
-### 1. Terminal Telemetry & Decision Stream
-The engine outputs structured, timestamped logs detailing every step of the ingestion and evaluation pipeline.
+The format comes from `render_alert()` in `alerts.py` (the values below are illustrative):
 
 ```text
-2026-11-06 14:02:11 [INFO] [telegram_poller] Ingested 3 new messages from @h1b_slots_india
-2026-11-06 14:02:11 [DEBUG] [na_filter] Msg #41029: SKIP filter (reason='NA report: OFC NA all')
-2026-11-06 14:02:12 [INFO] [ai_check] Msg #41030: Forwarded to GPT-4o Vision (Image: 128KB in-memory)
-2026-11-06 14:02:14 [INFO] [ai_check] AI verified availability: Chennai OFC [Nov 24 - Nov 28] (Confidence: High)
-2026-11-06 14:02:14 [INFO] [slotkey] Fresh fingerprint generated: ('biometrics', 'chennai', '2026-11-24', '14')
-2026-11-06 14:02:14 [INFO] [alerts] Enqueued alert for 2 targets (applicant, family)
-2026-11-06 14:02:15 [INFO] [alerts] Target 'applicant' delivered via Telegram Bot API (HTTP 200, latency=420ms)
-2026-11-06 14:02:16 [INFO] [alerts] Target 'family' delivered via Telegram Bot API (HTTP 200, latency=390ms)
+🚨 BIOMETRICS (OFC) SLOT
+
+📍 Chennai
+📅 24 Nov
+
+💬 Chennai OFC available 24 Nov
+
+👥 <group name>
+🕒 Posted 6 Nov, 2:02 PM IST · 3:32 AM EST
+🔗 Open post
 ```
 
-### 2. High-Priority Telegram Alert Format
-Alerts delivered to mobile devices are structured for immediate legibility, enabling users to act without reading through chatter.
+When a screenshot is the evidence, the screenshot is sent as a photo with the alert as its caption.
 
-```text
-🚨 H-1B VISA SLOTS DETECTED
-
-📍 Location: Chennai (OFC Biometrics)
-📅 Available Dates: 24 Nov 2026 - 28 Nov 2026
-📊 Source: Community Broadcast (@h1b_slots_india)
-⏰ Detected At: 06 Nov, 02:02 PM IST
-
-⚠️ Log into the portal immediately to claim appointments.
-```
-
-### 3. Decision Audit Trail (`decisions.log`)
-For complete transparency, every ingested post is permanently recorded in `data/logs/decisions.log`, allowing rapid post-mortem analysis:
-* `SKIP filter [reason]`: Dropped by deterministic heuristic regex.
-* `SKIP ai [reason]`: Evaluated by GPT-4o and found to be chatter or negative report.
-* `SKIP dup-slotkey [key]`: Suppressed duplicate broadcast within the 15-minute window.
-* `FORWARD [details]`: High-priority alert dispatched to notification queues.
+### Decision audit trail (`decisions.log`)
+Every post gets one line, so any alert (or missed alert) can be traced:
+* `SKIP filter [...]`: dropped by the rule filter
+* `SKIP ai [...]`: the model said there was no availability
+* `SKIP dup-*`: a duplicate (`dup-id`, `dup-album`, `dup-sender`, `dup-summary`)
+* `FORWARD`: alert sent
 
 ---
 
-## Key Engineering Challenges Overcome
+## Key Engineering Challenges
 
-### 1. Telegram FloodWait Mitigation & Cursor State Persistence
-* **The Challenge**: Telegram's MTProto servers enforce strict rate limits on client polling. Rapid history requests trigger `FloodWaitError` exceptions demanding sleep periods up to 300+ seconds. If an unhandled exception crashes the process, polling resets from the beginning, triggering repeated rate limits.
-* **The Solution**: Designed an adaptive cursor-based poller in `telegram_poller.py`. It tracks the highest processed `message_id` inside an SQLite table (`telegram_cursors`). When Telegram returns a `FloodWaitError`, the poller intercepts the exception, logs an alert, enters a controlled sleep for the exact required duration, and resumes without losing cursor integrity.
+### 1. Telegram rate limits without losing messages
+* **Challenge:** Telegram returns `FloodWait` errors when a client reads too often, and a crash mid-read must not
+  lose or repeat messages.
+* **Solution:** the poller staggers group reads, honours each `FloodWait` for exactly the requested time (flood-waits
+  don't count as freezes for the watchdog), and stores the last processed message ID per group in SQLite.
 
-### 2. Multimodal Screenshot Verification & Fail-Open Safety Logic
-* **The Challenge**: Many users post screenshots of calendar availability without typing explanatory text. Relying solely on text filtering misses 40%+ of genuine drops. However, querying vision models introduces network latency and risk of API timeouts during large embassy release waves.
-* **The Solution**: Implemented an in-memory streaming handler using `Telethon.download_media(file=bytes)`. Image bytes are forwarded directly to OpenAI GPT-4o as base64 payloads without touching the local disk. Crucially, the system implements **fail-open error boundaries**: if the OpenAI API times out or throws an error, the pipeline marks `failed=True` and delivers the alert with an explicit review banner. A critical booking window is never missed due to third-party API downtime.
+### 2. Screenshots and model outages
+* **Challenge:** many real sightings are calendar screenshots with no text, but depending on a model means an
+  outage could hide a real opening.
+* **Solution:** screenshots go to a vision model with a strict JSON schema, and the pipeline fails open: when the
+  model can't answer, plausible sightings are still alerted with a "please look" header.
 
-### 3. Thread-Safe Process Watchdog & Deadlock Prevention
-* **The Challenge**: In Python asyncio applications, network drivers or third-party C-extensions can occasionally deadlock the main event loop, causing the process to silently hang without terminating. Standard Docker healthchecks running simple HTTP pings cannot always detect an internal loop lockup.
-* **The Solution**: Built an independent daemon thread (`health.py`) running outside the asyncio event loop. The event loop periodically updates an atomic memory timestamp. If the watchdog detects that the event loop has failed to tick for more than 10 minutes, it writes a fatal alert log and invokes `os._exit(1)`. Docker (`restart: unless-stopped`) immediately detects the crash and provisions a fresh container instance, restoring 24/7 uptime automatically.
+### 3. Resilient and rate-aware web polling
+* **Challenge:** CheckVisaSlots serves a bot checkpoint to plain HTTP clients, and early browser checks were denied
+  (HTTP 403); later a rate-limit page appeared.
+* **Solution:** The reader uses full Chromium with a persistent browser profile, native request headers, and
+  conservative polling intervals (synced to the 2-minute site refresh cycle, with a 25-second floor). Both problems
+  were investigated from response headers and request IDs, and documented in [`docs/`](docs/) with clear root-cause analysis.
+
+### 4. Silent hangs
+* **Challenge:** an asyncio process can hang without crashing, so Docker never restarts it.
+* **Solution:** a watchdog thread outside the event loop checks that the loops are still ticking and calls
+  `os._exit` after 10 minutes without progress, so Docker starts a fresh process.
 
 ---
 
-## Technical Decisions & Architecture Trade-offs
+## Technical Decisions & Trade-offs
 
-| Decision | Chosen Architecture | Alternative Considered | Engineering Trade-off & Rationale |
+| Decision | Chosen | Alternative | Rationale |
 | :--- | :--- | :--- | :--- |
-| **Operational Boundary** | **Read-Only Telemetry Engine** | Automated Booking Bot | Building an automated booking bot exposes applicants to IP bans, Captcha traps, and account cancellation. A read-only alert engine ensures 100% legal and operational safety while still delivering the speed necessary to book manually. |
-| **Protocol Selection** | **MTProto Client API** | Standard Telegram Bot API | Standard Telegram bots can only read messages in groups where they have administrator privileges. MTProto user client protocols allow passive read-only monitoring of public community broadcast channels. |
-| **Two-Stage Filtering** | **Regex Heuristics + Multimodal AI** | Single End-to-End LLM Prompt | Passing 5,000+ raw messages daily through GPT-4o would incur heavy token costs ($15-$30/day) and introduce 1-2s latency per message. The regex pre-filter drops 85%+ of chatter in sub-millisecond time at zero cost. |
-| **Storage Architecture** | **SQLite (WAL Mode)** | Redis / PostgreSQL | For a single-node deployment, running an external database daemon introduces unnecessary operational overhead. SQLite with Write-Ahead Logging delivers sub-millisecond cursor updates with zero configuration. |
+| **Scope** | **Read-only alerts** | Booking bot | Automating the portal risks the applicant's account. Alerts let a person book by hand. |
+| **Reading Telegram** | **Telethon user client** | Telegram Bot API | A bot can only read groups it has been added to; a user client can read public groups by username. |
+| **Filtering** | **Rules, then a vision model** | Model only | Most posts are obvious noise; the rules drop them without an API call. |
+| **Model failure** | **Fail open** | Fail closed | A false alarm costs a glance; a missed opening costs the appointment. |
+| **Storage** | **SQLite (WAL)** | Redis / PostgreSQL | One small service on one server doesn't need a database server. |
 
 ---
 
-## What's Next (v2 Roadmap)
+## What's Next
 
-* **Multi-Country Embassy Expansion**: Extend configuration to monitor European Schengen and UK visa appointment streams across Canadian and European consulates.
-* **Webhook Push Dispatcher**: Allow external services (Slack, Discord, and custom webhooks) to subscribe to verified slot announcements via authenticated HTTP callbacks.
-* **Browser Extension Sync**: Provide a lightweight companion browser extension that receives push alerts and pre-opens the official consular login page in an authenticated session.
+* **More visa types and consulates:** make the groups, page and fingerprint rules configurable per visa type.
+* **More alert channels:** add other outputs (for example email or a webhook) alongside Telegram.
+* The read-only rule stays: the watcher will never log in to or automate the official portal.
