@@ -83,7 +83,9 @@ flowchart TD
 
 ### 2. Spatial-Temporal Fingerprinting (`slotkey.py`)
 When slots drop, dozens of users broadcast the same discovery across multiple groups within seconds. `slotkey.py` computes an immutable fingerprint combining:
-$$\text{fingerprint} = \text{hash}(\text{appointment\_type}, \text{consulate\_city}, \text{earliest\_date}, \text{time\_bucket})$$
+```python
+fingerprint = hash((appointment_type, consulate_city, earliest_date, time_bucket))
+```
 Incoming alerts matching an existing fingerprint within a 15-minute sliding window are deduplicated, protecting applicants from notification floods.
 
 ### 3. Distributed Queue Pacing & Error Fallback

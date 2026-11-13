@@ -110,7 +110,9 @@ When a message arrives, it passes through a rigorous two-stage gating funnel:
 
 ### Phase 3: Spatial-Temporal Fingerprinting & State Deduplication
 When slots drop, dozens of applicants broadcast identical alerts across multiple channels within seconds. To prevent alert fatigue, `slotkey.py` computes a spatial-temporal fingerprint:
-$$\text{slotkey} = (\text{appointment\_type}, \text{normalized\_city}, \text{earliest\_date}, \text{hour\_bucket})$$
+```python
+slotkey = (appointment_type, normalized_city, earliest_date, hour_bucket)
+```
 The engine logs this key to SQLite (`watcher.db`). If an incoming alert matches an active slotkey seen within the last 15 minutes, it is recognized as a duplicate broadcast and suppressed from dispatch.
 
 ### Phase 4: Prioritized Dispatch, Queue Pacing & Supervisor Watchdog
